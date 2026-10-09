@@ -1,31 +1,353 @@
 @import "tailwindcss";
 
-:root {
-	--background: #07090c;
-	--foreground: #e6e8eb;
+/*
+ * DBC Radar design tokens (source: design handoff `tokens.css` + DBC Radar System spec).
+ * Tailwind's default palette, radii, shadows and font stacks are reset so only the
+ * instrument's vocabulary exists: `bg-bg`, `text-ink-2`, `border-line-soft`, `text-signal`…
+ */
+@theme {
+	--color-*: initial;
+	--radius-*: initial;
+	--shadow-*: initial;
+	--font-*: initial;
+	--animate-*: initial;
+
+	--color-bg: oklch(0.155 0.008 70);
+	--color-bg-2: oklch(0.19 0.009 70);
+	--color-bg-3: oklch(0.23 0.01 70);
+	--color-line: oklch(0.32 0.012 70);
+	--color-line-soft: oklch(0.245 0.01 70);
+	--color-ink: oklch(0.95 0.012 85);
+	--color-ink-2: oklch(0.78 0.012 80);
+	--color-ink-3: oklch(0.63 0.012 78);
+	/* Amber phosphor: completion only (graduation, curve >= 80 %, sweep). */
+	--color-signal: oklch(0.83 0.155 78);
+	--color-signal-ink: oklch(0.2 0.03 70);
+	/* Always paired with a glyph: buy ▲, sell ▼, risk ◆ + hatch. */
+	--color-buy: oklch(0.8 0.11 235);
+	--color-sell: oklch(0.73 0.15 35);
+	--color-risk: oklch(0.67 0.2 22);
+	--color-risk-ink: oklch(0.15 0.02 20);
+	/* Text on the hue-coloured avatar discs. */
+	--color-avatar-ink: oklch(0.97 0.01 85);
+
+	--text-display-xl: 104px;
+	--text-display-xl--line-height: 0.88;
+	--text-display-l: 58px;
+	--text-display-l--line-height: 1;
+	--text-display-m: 30px;
+	--text-display-m--line-height: 1;
+	--text-section: 21px;
+	--text-section--line-height: 1.1;
+	--text-body-l: 17px;
+	--text-body-l--line-height: 1.45;
+	--text-body: 14px;
+	--text-body--line-height: 1.5;
+	--text-body-s: 12px;
+	--text-body-s--line-height: 1.45;
+	--text-data: 12px;
+	--text-data--line-height: 1.35;
+	--text-data-s: 11px;
+	--text-data-s--line-height: 1.35;
+	--text-label: 9.5px;
+	--text-label--line-height: 1.3;
+	--tracking-label: 0.1em;
+
+	--spacing: 4px;
+	--radius-none: 0;
+	--radius-chip: 2px;
+	/* The only shadow: hover cards and toasts. */
+	--shadow-float: 0 12px 36px oklch(0 0 0 / 0.45);
+
+	--ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+	--ease-alarm: steps(8);
+	--dur-tick: 380ms;
+	--dur-pulse: 650ms;
+	--dur-flash: 900ms;
+	--dur-ping: 1000ms;
+	--dur-flip: 420ms;
+	--dur-grad: 1400ms;
+
+	/* Motion vocabulary (DBC Radar System › Motion tokens + Choreography). */
+	--animate-tick: tick var(--dur-tick) var(--ease-out);
+	--animate-pulse: pulse var(--dur-pulse) var(--ease-out);
+	--animate-flash: flash var(--dur-flash) var(--ease-out);
+	--animate-ping: ping var(--dur-ping) var(--ease-out) 2;
+	--animate-flip: flip var(--dur-flip) var(--ease-out);
+	--animate-graduation: graduation var(--dur-grad) var(--ease-out);
+	--animate-alarm: alarm 1600ms var(--ease-alarm);
+	--animate-slide-in: slide-in 520ms var(--ease-out);
+	--animate-feed-enter: feed-enter 320ms var(--ease-out);
+	--animate-price-up: price-up 700ms var(--ease-out);
+	--animate-price-down: price-down 700ms var(--ease-out);
+	--animate-sweep: sweep var(--sweep-period, 6s) linear infinite;
+
+	/* Stat value rolls in from above, dimmed and tinted. `--tick-color` overrides the tint. */
+	@keyframes tick {
+		from {
+			transform: translateY(-0.18em);
+			opacity: 0.35;
+			color: var(--tick-color, var(--color-signal));
+		}
+	}
+	/* Trade ring: a short outward ring in `--pulse-color` (buy/sell). */
+	@keyframes pulse {
+		from {
+			box-shadow: 0 0 0 0 color-mix(in oklch, var(--pulse-color, var(--color-ink)) 70%, transparent);
+		}
+		to {
+			box-shadow: 0 0 0 8px transparent;
+		}
+	}
+	/* Row tint after a trade: 12 % of `--flash-color` fading out. */
+	@keyframes flash {
+		from {
+			background-color: color-mix(in oklch, var(--flash-color, var(--color-ink)) 12%, transparent);
+		}
+	}
+	/* New launch ripple (runs twice: the double ping). Put it on an absolutely positioned ring. */
+	@keyframes ping {
+		from {
+			transform: scale(1);
+			opacity: 0.8;
+		}
+		to {
+			transform: scale(2.6);
+			opacity: 0;
+		}
+	}
+	/* FLIP reorder: set `--flip-from` to the inverted delta (e.g. `-54px`) before playing. */
+	@keyframes flip {
+		from {
+			transform: translateY(var(--flip-from, 0));
+		}
+	}
+	/* Graduation: amber flare + glow (the only glow in the system), then settles. */
+	@keyframes graduation {
+		0% {
+			background-color: transparent;
+			box-shadow: none;
+		}
+		12% {
+			background-color: color-mix(in oklch, var(--color-signal) 20%, transparent);
+			box-shadow:
+				inset 0 0 0 1px var(--color-signal),
+				0 0 28px color-mix(in oklch, var(--color-signal) 35%, transparent);
+		}
+		100% {
+			background-color: transparent;
+			box-shadow: none;
+		}
+	}
+	/* Risk raised: stepped blink, never a smooth fade (pair with `hatch-risk`). */
+	@keyframes alarm {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.2;
+		}
+	}
+	@keyframes slide-in {
+		from {
+			transform: translateX(-18px);
+			opacity: 0;
+		}
+	}
+	@keyframes feed-enter {
+		from {
+			transform: translateY(-8px);
+			opacity: 0;
+		}
+	}
+	/* Price nudge after a trade: buy nudges up in blue, sell down in orange. */
+	@keyframes price-up {
+		from {
+			transform: translateY(5px);
+			color: var(--color-buy);
+		}
+	}
+	@keyframes price-down {
+		from {
+			transform: translateY(-5px);
+			color: var(--color-sell);
+		}
+	}
+	@keyframes sweep {
+		to {
+			transform: rotate(360deg);
+		}
+	}
 }
 
+/* next/font injects the real family names on <html>; map them onto the token names. */
 @theme inline {
-	--color-background: var(--background);
-	--color-foreground: var(--foreground);
-	--font-sans: var(--font-geist-sans);
-	--font-mono: var(--font-geist-mono);
+	--font-display: var(--font-big-shoulders), "Big Shoulders Display", sans-serif;
+	/* Big Shoulders is variable on `opsz`: pin the display cut. */
+	--font-display--font-variation-settings: "opsz" 72;
+	--font-sans: var(--font-spline-sans), "Spline Sans", system-ui, sans-serif;
+	--font-mono: var(--font-spline-sans-mono), "Spline Sans Mono", ui-monospace, monospace;
 }
 
-body {
-	background: var(--background);
-	color: var(--foreground);
+/* Light theme (optional): opt in with <html data-theme="light">. */
+[data-theme="light"] {
+	--color-bg: oklch(0.972 0.007 85);
+	--color-bg-2: oklch(0.945 0.009 85);
+	--color-bg-3: oklch(0.915 0.011 85);
+	--color-line: oklch(0.8 0.014 80);
+	--color-line-soft: oklch(0.89 0.011 80);
+	--color-ink: oklch(0.2 0.012 70);
+	--color-ink-2: oklch(0.38 0.012 70);
+	--color-ink-3: oklch(0.5 0.012 70);
+	--color-signal: oklch(0.62 0.15 65);
+	--color-signal-ink: oklch(0.99 0.01 85);
+	--color-buy: oklch(0.5 0.13 240);
+	--color-sell: oklch(0.56 0.17 40);
+	--color-risk: oklch(0.52 0.2 25);
+	--color-risk-ink: oklch(0.99 0.01 85);
+	--shadow-float: 0 12px 36px oklch(0.2 0.02 70 / 0.18);
+	color-scheme: light;
 }
 
-@keyframes flash {
-	from {
-		background-color: rgb(16 185 129 / 0.18);
+/*
+ * Reduced motion (Choreography table): no rings, no slides, no blinking.
+ * Colour hints are kept so information still arrives.
+ */
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--dur-pulse: 0ms;
+		--dur-ping: 0ms;
+		--dur-flip: 0ms;
 	}
-	to {
-		background-color: transparent;
+	@keyframes tick {
+		from {
+			color: var(--tick-color, var(--color-signal));
+		}
+	}
+	@keyframes price-up {
+		from,
+		60% {
+			color: var(--color-buy);
+		}
+	}
+	@keyframes price-down {
+		from,
+		60% {
+			color: var(--color-sell);
+		}
+	}
+	@keyframes graduation {
+		from {
+			background-color: color-mix(in oklch, var(--color-signal) 14%, transparent);
+		}
+	}
+	.animate-slide-in,
+	.animate-feed-enter,
+	.animate-flip,
+	.animate-ping,
+	.animate-pulse,
+	.animate-alarm,
+	.animate-sweep {
+		animation: none;
 	}
 }
 
-.animate-flash {
-	animation: flash 1.2s ease-out;
+/* Side tints for `animate-flash` / `animate-pulse`. */
+@utility tint-buy {
+	--flash-color: var(--color-buy);
+	--pulse-color: var(--color-buy);
+}
+@utility tint-sell {
+	--flash-color: var(--color-sell);
+	--pulse-color: var(--color-sell);
+}
+@utility tint-risk {
+	--flash-color: var(--color-risk);
+	--pulse-color: var(--color-risk);
+}
+@utility tint-signal {
+	--flash-color: var(--color-signal);
+	--pulse-color: var(--color-signal);
+}
+
+/* Hatches: risk is red ◆ + hatch, never colour alone. */
+@utility hatch-risk {
+	background-image: repeating-linear-gradient(
+		135deg,
+		var(--color-risk) 0 5px,
+		color-mix(in oklch, var(--color-risk) 65%, var(--color-bg)) 5px 10px
+	);
+}
+/* Faint risk hatch for whole rows (creator sold). */
+@utility hatch-risk-soft {
+	background-image: repeating-linear-gradient(
+		135deg,
+		color-mix(in oklch, var(--color-risk) 16%, transparent) 0 8px,
+		transparent 8px 16px
+	);
+}
+/* Offline banner. */
+@utility hatch-sell {
+	background-image: repeating-linear-gradient(
+		135deg,
+		color-mix(in oklch, var(--color-sell) 14%, transparent) 0 8px,
+		transparent 8px 16px
+	);
+}
+/* Neutral placeholder (chart areas, skeleton blocks that need texture). */
+@utility hatch-ink {
+	background-image: repeating-linear-gradient(
+		135deg,
+		color-mix(in oklch, var(--color-ink) 4%, transparent) 0 6px,
+		transparent 6px 12px
+	);
+}
+
+/* Numbers: Spline Sans Mono, tabular. */
+@utility num {
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Mono uppercase micro label (9.5px, 0.1em). */
+@utility label {
+	font-family: var(--font-mono);
+	font-size: var(--text-label);
+	line-height: var(--text-label--line-height);
+	letter-spacing: var(--tracking-label);
+	text-transform: uppercase;
+	color: var(--color-ink-3);
+}
+
+@layer base {
+	html {
+		color-scheme: dark;
+		background: var(--color-bg);
+	}
+	body {
+		background: var(--color-bg);
+		color: var(--color-ink);
+		font-family: var(--font-sans);
+		font-size: var(--text-body);
+		line-height: var(--text-body--line-height);
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+	a {
+		text-decoration-color: var(--color-line);
+		text-underline-offset: 3px;
+	}
+	::selection {
+		background: var(--color-signal);
+		color: var(--color-signal-ink);
+	}
+	:focus-visible {
+		outline: 2px solid var(--color-ink);
+		outline-offset: 2px;
+	}
+	button:not(:disabled),
+	[role="button"]:not(:disabled) {
+		cursor: pointer;
+	}
 }

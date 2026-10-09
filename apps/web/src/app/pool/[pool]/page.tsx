@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { PoolView } from '@/components/pool-view'
+import { PoolSkeleton, PoolView } from '@/components/pool-view'
 
 const Pool = async ({ params }: { params: PageProps<'/pool/[pool]'>['params'] }) => {
 	const { pool } = await params
@@ -8,7 +8,7 @@ const Pool = async ({ params }: { params: PageProps<'/pool/[pool]'>['params'] })
 
 export default function PoolPage({ params }: PageProps<'/pool/[pool]'>) {
 	return (
-		<Suspense fallback={<p className="p-6 text-sm text-white/45">Loading…</p>}>
+		<Suspense fallback={<PoolSkeleton />}>
 			<Pool params={params} />
 		</Suspense>
 	)

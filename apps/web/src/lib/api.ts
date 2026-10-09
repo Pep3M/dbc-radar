@@ -1,15 +1,25 @@
 import type {
+	AlertsState,
 	GlobalStats,
 	Health,
+	Pipeline,
 	PoolDetail,
 	PoolSort,
 	PoolSummary,
 } from '@dbc-radar/indexer/types'
 
 export type {
+	AlertDelivery,
+	AlertFired,
+	AlertPayload,
+	AlertsState,
+	AlertType,
 	GlobalStats,
 	Health,
+	LatencySample,
 	LiveEvent,
+	Pipeline,
+	PipelineComponent,
 	PoolDetail,
 	PoolSummary,
 	RiskFlag,
@@ -33,4 +43,9 @@ export const api = {
 	pool: (pool: string) => get<PoolDetail>(`/pools/${pool}`),
 	stats: () => get<GlobalStats>('/stats'),
 	health: () => get<Health>('/health'),
+	alerts: () => get<AlertsState>('/alerts'),
+	pipeline: () => get<Pipeline>('/pipeline'),
 }
+
+/** `get` throws `Error('404 /path')`: true when the indexer build doesn't expose that endpoint. */
+export const isNotFound = (error: Error | null | undefined) => !!error?.message.startsWith('404 ')
