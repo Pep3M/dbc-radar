@@ -1,0 +1,4 @@
+{
+	"extends": "../apps/indexer/tsconfig.json",
+	"include": ["."]
+}

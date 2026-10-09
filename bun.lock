@@ -6,6 +6,7 @@
       "name": "dbc-radar",
       "devDependencies": {
         "@biomejs/biome": "^2.5.15",
+        "@types/bun": "^1.4.2",
       },
     },
     "apps/indexer": {

@@ -5,12 +5,15 @@
 		"apps/*"
 	],
 	"scripts": {
+		"setup": "bun scripts/setup.ts",
+		"dev": "bun scripts/dev.ts",
 		"dev:indexer": "bun --cwd apps/indexer dev",
 		"dev:web": "bun --cwd apps/web dev",
 		"lint": "biome check .",
 		"format": "biome format --write ."
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.15"
+		"@biomejs/biome": "^2.5.15",
+		"@types/bun": "^1.4.2"
 	}
 }
