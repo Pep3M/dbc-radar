@@ -74,7 +74,7 @@ const body = (call: Call) =>
 				? [DBC_PROGRAM, { limit: call.limit, commitment: 'confirmed' }]
 				: [
 						call.signature,
-						{ encoding: 'json', commitment: 'confirmed', maxSupportedTransactionVersion: 0 },
+						{ encoding: 'json', commitment: 'confirmed', maxSupportedTransactionVersion: 1 },
 					],
 	})
 

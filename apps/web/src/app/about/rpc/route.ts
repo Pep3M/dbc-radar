@@ -25,7 +25,7 @@ const rebuild = (body: unknown) => {
 	if (method === 'getTransaction' && typeof params[0] === 'string' && SIGNATURE.test(params[0])) {
 		return [
 			params[0],
-			{ encoding: 'json', commitment: 'confirmed', maxSupportedTransactionVersion: 0 },
+			{ encoding: 'json', commitment: 'confirmed', maxSupportedTransactionVersion: 1 },
 		]
 	}
 	return null

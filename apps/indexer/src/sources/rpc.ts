@@ -55,7 +55,7 @@ export const createRpcSource = (): TxSource => {
 		try {
 			const res = await connection.getTransaction(signature, {
 				commitment: 'confirmed',
-				maxSupportedTransactionVersion: 0,
+				maxSupportedTransactionVersion: 1,
 			})
 			if (res) onTx(normalizeRpcTx(signature, res))
 			else if (attempt < 3) {
