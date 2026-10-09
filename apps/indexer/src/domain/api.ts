@@ -15,7 +15,13 @@ export type LiveEvent =
 	  }
 	| { type: 'graduated'; pool: string; ts: number }
 
-export type RiskFlag = 'creator_sold' | 'whale_buyer' | 'wash_trading' | 'dumping'
+export type RiskFlag =
+	| 'creator_sold'
+	| 'whale_buyer'
+	| 'wash_trading'
+	| 'dumping'
+	| 'concentrated'
+	| 'fresh_wallets'
 
 export type PoolSummary = {
 	pool: string
@@ -24,6 +30,15 @@ export type PoolSummary = {
 	creator: string | null
 	name: string | null
 	symbol: string | null
+	image: string | null
+	twitter: string | null
+	website: string | null
+	mcapUsd: number | null
+	liquidityUsd: number | null
+	holders: number | null
+	top10Pct: number | null
+	botPct: number | null
+	freshHolders: number | null
 	createdAt: number | null
 	firstSeenAt: number
 	lastTradeAt: number | null
@@ -33,6 +48,7 @@ export type PoolSummary = {
 	quoteReserve: number | null
 	migrationThreshold: number | null
 	graduatedAt: number | null
+	timeToGraduateMs: number | null
 	trades: number
 	buys: number
 	sells: number
@@ -82,6 +98,7 @@ export type GlobalStats = {
 export type Health = {
 	source: string
 	sourceStats?: Record<string, number>
+	components?: Record<string, Record<string, number>>
 	txs: number
 	events: number
 	lastEventAt: number

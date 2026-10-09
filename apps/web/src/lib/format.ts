@@ -35,6 +35,13 @@ export const age = (ts: number | null | undefined, now: number) => {
 	return `${Math.floor(s / 86_400)}d`
 }
 
+export const duration = (ms: number) => {
+	const s = Math.round(ms / 1000)
+	if (s < 60) return `${s}s`
+	if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`
+	return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
+}
+
 export const links = {
 	solscanToken: (mint: string) => `https://solscan.io/token/${mint}`,
 	solscanAccount: (address: string) => `https://solscan.io/account/${address}`,

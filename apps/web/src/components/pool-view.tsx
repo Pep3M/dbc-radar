@@ -5,7 +5,7 @@ import { api } from '@/lib/api'
 import { age, links, pct, price, shortAddress, usd } from '@/lib/format'
 import { useNow, usePolling } from '@/lib/hooks'
 import { CandleChart } from './candle-chart'
-import { ExternalLink, ProgressBar, RiskBadge, RiskFlags, Stat } from './ui'
+import { ExternalLink, ProgressBar, RiskBadge, RiskFlags, Stat, TokenImage } from './ui'
 
 export const PoolView = ({ pool }: { pool: string }) => {
 	const now = useNow()
@@ -25,24 +25,31 @@ export const PoolView = ({ pool }: { pool: string }) => {
 				← Radar
 			</Link>
 			<header className="mt-3 flex flex-wrap items-center justify-between gap-4">
-				<div>
-					<h1 className="text-2xl font-semibold">
-						{data.symbol ?? shortAddress(mint ?? data.pool, 6)}
-						{data.name && <span className="ml-2 text-base text-white/45">{data.name}</span>}
-					</h1>
-					<div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/50">
-						{mint && (
-							<ExternalLink href={links.solscanToken(mint)}>mint {shortAddress(mint)}</ExternalLink>
-						)}
-						<ExternalLink href={links.solscanAccount(data.pool)}>
-							pool {shortAddress(data.pool)}
-						</ExternalLink>
-						{data.creator && (
-							<ExternalLink href={links.solscanAccount(data.creator)}>
-								creator {shortAddress(data.creator)}
+				<div className="flex items-center gap-4">
+					<TokenImage src={data.image} label={data.symbol ?? '??'} size={52} />
+					<div>
+						<h1 className="text-2xl font-semibold">
+							{data.symbol ?? shortAddress(mint ?? data.pool, 6)}
+							{data.name && <span className="ml-2 text-base text-white/45">{data.name}</span>}
+						</h1>
+						<div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/50">
+							{mint && (
+								<ExternalLink href={links.solscanToken(mint)}>
+									mint {shortAddress(mint)}
+								</ExternalLink>
+							)}
+							<ExternalLink href={links.solscanAccount(data.pool)}>
+								pool {shortAddress(data.pool)}
 							</ExternalLink>
-						)}
-						{mint && <ExternalLink href={links.jupiter(mint)}>trade on Jupiter</ExternalLink>}
+							{data.creator && (
+								<ExternalLink href={links.solscanAccount(data.creator)}>
+									creator {shortAddress(data.creator)}
+								</ExternalLink>
+							)}
+							{mint && <ExternalLink href={links.jupiter(mint)}>trade on Jupiter</ExternalLink>}
+							{data.twitter && <ExternalLink href={data.twitter}>X</ExternalLink>}
+							{data.website && <ExternalLink href={data.website}>website</ExternalLink>}
+						</div>
 					</div>
 				</div>
 				<div className="flex items-center gap-4">
@@ -51,7 +58,7 @@ export const PoolView = ({ pool }: { pool: string }) => {
 				</div>
 			</header>
 
-			<section className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
+			<section className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-5 lg:grid-cols-10">
 				<Stat label="Price" value={price(data.priceUsd)} />
 				<Stat
 					label="Curve"
@@ -62,10 +69,12 @@ export const PoolView = ({ pool }: { pool: string }) => {
 							: undefined
 					}
 				/>
+				<Stat label="Market cap" value={usd(data.mcapUsd)} hint="via Solami Blur" />
+				<Stat label="Liquidity" value={usd(data.liquidityUsd)} />
 				<Stat label="Volume" value={usd(data.volume)} />
 				<Stat label="Vol 5m" value={usd(data.volume5m)} />
 				<Stat label="Buys / Sells" value={`${data.buys} / ${data.sells}`} />
-				<Stat label="Traders" value={data.uniqueTraders} />
+				<Stat label="Holders" value={data.holders ?? '—'} hint="via Solami Data API" />
 				<Stat label="Top buyer" value={pct(data.topBuyerShare, 0)} hint="share of buy volume" />
 				<Stat
 					label={data.graduatedAt ? 'Graduated' : 'Age'}
@@ -93,6 +102,22 @@ export const PoolView = ({ pool }: { pool: string }) => {
 							<dd className="font-mono">
 								{usd(data.buyVolume)} / {usd(data.sellVolume)}
 							</dd>
+						</div>
+						<div className="flex justify-between">
+							<dt>Top 10 holders (excl. curve)</dt>
+							<dd className="font-mono">{pct(data.top10Pct)}</dd>
+						</div>
+						<div className="flex justify-between">
+							<dt>Held by bot-tagged wallets</dt>
+							<dd className="font-mono">{pct(data.botPct)}</dd>
+						</div>
+						<div className="flex justify-between">
+							<dt>Fresh wallets in top 20</dt>
+							<dd className="font-mono">{data.freshHolders ?? '—'}</dd>
+						</div>
+						<div className="flex justify-between">
+							<dt>Unique traders</dt>
+							<dd className="font-mono">{data.uniqueTraders}</dd>
 						</div>
 						<div className="flex justify-between">
 							<dt>Traders per trade</dt>

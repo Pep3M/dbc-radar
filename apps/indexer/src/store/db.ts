@@ -24,9 +24,7 @@ export const openDb = (path: string) => {
 			quote_reserve REAL,
 			migration_threshold REAL,
 			progress REAL,
-			graduated_at INTEGER,
-			name TEXT,
-			symbol TEXT
+			graduated_at INTEGER
 		);
 		CREATE INDEX IF NOT EXISTS pools_created_at ON pools (created_at);
 		CREATE INDEX IF NOT EXISTS pools_last_trade_at ON pools (last_trade_at);
@@ -47,6 +45,24 @@ export const openDb = (path: string) => {
 		);
 		CREATE INDEX IF NOT EXISTS trades_pool_ts ON trades (pool, ts);
 		CREATE INDEX IF NOT EXISTS trades_ts ON trades (ts);
+
+		CREATE TABLE IF NOT EXISTS tokens (
+			mint TEXT PRIMARY KEY,
+			name TEXT,
+			symbol TEXT,
+			image TEXT,
+			twitter TEXT,
+			website TEXT,
+			metadata_at INTEGER,
+			mcap_usd REAL,
+			liquidity_usd REAL,
+			market_at INTEGER,
+			holders INTEGER,
+			top10_pct REAL,
+			bot_pct REAL,
+			fresh_holders INTEGER,
+			holders_at INTEGER
+		);
 	`)
 	return db
 }

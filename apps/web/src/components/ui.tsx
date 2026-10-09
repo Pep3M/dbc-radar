@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react'
+'use client'
+
+import { type ReactNode, useState } from 'react'
 import type { RiskFlag } from '@/lib/api'
 
 export const ProgressBar = ({
@@ -31,6 +33,8 @@ const FLAG_LABEL: Record<RiskFlag, string> = {
 	whale_buyer: 'whale buyer',
 	wash_trading: 'wash trading',
 	dumping: 'dumping',
+	concentrated: 'top 10 hold >50%',
+	fresh_wallets: 'fresh wallets in top 20',
 }
 
 export const RiskBadge = ({ score, flags }: { score: number; flags: RiskFlag[] }) => {
@@ -83,13 +87,55 @@ export const Stat = ({
 	</div>
 )
 
-export const ExternalLink = ({ href, children }: { href: string; children: ReactNode }) => (
-	<a
-		href={href}
-		target="_blank"
-		rel="noopener noreferrer"
-		className="text-sky-300 underline-offset-2 hover:underline"
-	>
-		{children}
-	</a>
-)
+// Token socials are creator-controlled metadata: only plain http(s) URLs become links.
+const isSafeUrl = (href: string) => /^https?:\/\//i.test(href)
+
+export const ExternalLink = ({ href, children }: { href: string; children: ReactNode }) =>
+	isSafeUrl(href) ? (
+		<a
+			href={href}
+			target="_blank"
+			rel="noopener noreferrer"
+			className="text-sky-300 underline-offset-2 hover:underline"
+		>
+			{children}
+		</a>
+	) : null
+
+export const TokenImage = ({
+	src,
+	label,
+	size = 28,
+}: {
+	src: string | null
+	label: string
+	size?: number
+}) => {
+	// Many launchpad CDNs block hotlinking, so a failed load falls back to initials.
+	const [failed, setFailed] = useState(false)
+	const style = { width: size, height: size }
+	if (!src || failed || !isSafeUrl(src)) {
+		return (
+			<span
+				className="flex shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] text-white/50"
+				style={style}
+			>
+				{label.slice(0, 2)}
+			</span>
+		)
+	}
+	return (
+		// biome-ignore lint/performance/noImgElement: token logos come from arbitrary hosts; next/image would need every domain allow-listed
+		<img
+			src={src}
+			alt=""
+			width={size}
+			height={size}
+			loading="lazy"
+			referrerPolicy="no-referrer"
+			onError={() => setFailed(true)}
+			className="shrink-0 rounded-full bg-white/10 object-cover"
+			style={style}
+		/>
+	)
+}

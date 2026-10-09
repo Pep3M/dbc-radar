@@ -1,8 +1,10 @@
 import { startServer } from './api/server'
 import { config } from './config'
+import { createEnricher } from './enrich'
 import { createIngestor } from './ingest'
 import { createMetrics } from './metrics'
 import { createPriceFeed } from './prices'
+import { createBlurStream } from './sources/blur'
 import { createRpcSource } from './sources/rpc'
 import type { TxSource } from './sources/types'
 import { createYellowstoneSource } from './sources/yellowstone'
@@ -20,12 +22,22 @@ const prices = createPriceFeed((mint, usd) => {
 await prices.ready
 // Price every quote mint already in the DB so trades stored without USD get backfilled.
 for (const { quote_mint } of db
-	.query<{ quote_mint: string }, []>('SELECT DISTINCT quote_mint FROM pools WHERE quote_mint IS NOT NULL')
+	.query<{ quote_mint: string }, []>(
+		'SELECT DISTINCT quote_mint FROM pools WHERE quote_mint IS NOT NULL',
+	)
 	.all()) {
 	prices.quoteToUsd(quote_mint, 0)
 }
 const ingestor = createIngestor(db, prices)
 const metrics = createMetrics(db, prices)
+const enricher = createEnricher(db)
+const blur = config.solamiApiKey ? createBlurStream(enricher.handleBlur) : null
+if (config.solamiApiKey) {
+	enricher.start()
+	blur?.start()
+} else {
+	console.warn('[indexer] no SOLAMI_API_KEY: metadata, holders and market data are disabled')
+}
 
 const source: TxSource = config.source === 'grpc' ? createYellowstoneSource() : createRpcSource()
 
@@ -45,6 +57,7 @@ const server = startServer({
 	port: config.port,
 	sourceName: source.name,
 	sourceStats: source.stats,
+	components: { enricher: enricher.stats, ...(blur ? { blur: blur.stats } : {}) },
 	metrics,
 	ingestor,
 })
@@ -53,6 +66,8 @@ console.log(`[indexer] API listening on http://localhost:${server.port}`)
 const shutdown = async () => {
 	await source.stop()
 	prices.stop()
+	enricher.stop()
+	blur?.stop()
 	server.stop()
 	db.close()
 	process.exit(0)

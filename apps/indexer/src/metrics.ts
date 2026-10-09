@@ -17,6 +17,15 @@ type PoolRow = {
 	creator: string | null
 	name: string | null
 	symbol: string | null
+	image: string | null
+	twitter: string | null
+	website: string | null
+	mcap_usd: number | null
+	liquidity_usd: number | null
+	holders: number | null
+	top10_pct: number | null
+	bot_pct: number | null
+	fresh_holders: number | null
 	created_at: number | null
 	first_seen_at: number
 	last_trade_at: number | null
@@ -41,6 +50,8 @@ type PoolRow = {
 
 const POOL_SELECT = `
 	SELECT p.*,
+		tk.name, tk.symbol, tk.image, tk.twitter, tk.website, tk.mcap_usd, tk.liquidity_usd,
+		tk.holders, tk.top10_pct, tk.bot_pct, tk.fresh_holders,
 		count(t.signature) AS trades,
 		coalesce(sum(t.side = 'buy'), 0) AS buys,
 		coalesce(sum(t.side = 'sell'), 0) AS sells,
@@ -59,6 +70,7 @@ const POOL_SELECT = `
 		), 0) AS top_buyer_volume,
 		coalesce(sum(CASE WHEN t.side = 'sell' AND t.trader = p.creator THEN t.usd_amount END), 0) AS creator_sold
 	FROM pools p
+	LEFT JOIN tokens tk ON tk.mint = p.base_mint
 	LEFT JOIN trades t ON t.pool = p.pool
 `
 
@@ -69,13 +81,24 @@ const assessRisk = (row: PoolRow) => {
 		flags.push('whale_buyer')
 	if (row.trades >= 20 && row.unique_traders / row.trades < 0.15) flags.push('wash_trading')
 	if (row.sell_volume_5m > 1.5 * row.buy_volume_5m && row.sell_volume_5m > 0) flags.push('dumping')
+	if (row.top10_pct !== null && (row.holders ?? 0) >= 20 && row.top10_pct > 0.5)
+		flags.push('concentrated')
+	if (row.fresh_holders !== null && row.fresh_holders >= 5) flags.push('fresh_wallets')
 	const weights: Record<RiskFlag, number> = {
 		creator_sold: 40,
 		whale_buyer: 25,
 		wash_trading: 20,
 		dumping: 15,
+		concentrated: 25,
+		fresh_wallets: 15,
 	}
-	return { score: flags.reduce((acc, f) => acc + weights[f], 0), flags }
+	return {
+		score: Math.min(
+			flags.reduce((acc, f) => acc + weights[f], 0),
+			100,
+		),
+		flags,
+	}
 }
 
 const toSummary = (row: PoolRow): Omit<PoolSummary, 'priceUsd'> => ({
@@ -85,6 +108,15 @@ const toSummary = (row: PoolRow): Omit<PoolSummary, 'priceUsd'> => ({
 	creator: row.creator,
 	name: row.name,
 	symbol: row.symbol,
+	image: row.image,
+	twitter: row.twitter,
+	website: row.website,
+	mcapUsd: row.mcap_usd || null,
+	liquidityUsd: row.liquidity_usd || null,
+	holders: row.holders,
+	top10Pct: row.top10_pct,
+	botPct: row.bot_pct,
+	freshHolders: row.fresh_holders,
 	createdAt: row.created_at,
 	firstSeenAt: row.first_seen_at,
 	lastTradeAt: row.last_trade_at,
@@ -93,6 +125,8 @@ const toSummary = (row: PoolRow): Omit<PoolSummary, 'priceUsd'> => ({
 	quoteReserve: row.quote_reserve,
 	migrationThreshold: row.migration_threshold,
 	graduatedAt: row.graduated_at,
+	timeToGraduateMs:
+		row.graduated_at !== null && row.created_at !== null ? row.graduated_at - row.created_at : null,
 	trades: row.trades,
 	buys: row.buys,
 	sells: row.sells,

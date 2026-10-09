@@ -17,6 +17,7 @@ export const startServer = (opts: {
 	port: number
 	sourceName: string
 	sourceStats?: Record<string, number>
+	components?: Record<string, Record<string, number>>
 	metrics: Metrics
 	ingestor: Ingestor
 }) => {
@@ -29,6 +30,8 @@ export const startServer = (opts: {
 			'/api/health': () =>
 				json({
 					source: opts.sourceName,
+					sourceStats: opts.sourceStats,
+					components: opts.components,
 					...ingestor.health,
 					lastEventAgeMs: ingestor.health.lastEventAt
 						? Date.now() - ingestor.health.lastEventAt

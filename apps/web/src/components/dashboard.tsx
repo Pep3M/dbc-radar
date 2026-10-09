@@ -3,9 +3,9 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { api, type PoolSummary, type Tab } from '@/lib/api'
-import { age, pct, price, shortAddress, usd } from '@/lib/format'
+import { age, duration, pct, price, shortAddress, usd } from '@/lib/format'
 import { type FeedItem, useLiveStream, useNow, usePolling } from '@/lib/hooks'
-import { ProgressBar, RiskBadge, Stat } from './ui'
+import { ProgressBar, RiskBadge, Stat, TokenImage } from './ui'
 
 const TABS: { id: Tab; label: string; hint: string }[] = [
 	{ id: 'new', label: 'New launches', hint: 'Pools created since the radar started' },
@@ -151,10 +151,15 @@ const PoolTable = ({
 						<th className="px-3 py-2 font-normal">Price</th>
 						<th className="px-3 py-2 font-normal">Curve</th>
 						<th className="px-3 py-2 text-right font-normal">Vol 5m</th>
-						<th className="px-3 py-2 text-right font-normal">Vol</th>
+						<th className="px-3 py-2 text-right font-normal">MCap</th>
 						<th className="px-3 py-2 text-right font-normal">Buys / Sells</th>
-						<th className="px-3 py-2 text-right font-normal">Traders</th>
-						<th className="px-3 py-2 text-right font-normal">Top buyer</th>
+						<th className="px-3 py-2 text-right font-normal">Holders</th>
+						<th
+							className="px-3 py-2 text-right font-normal"
+							title="Top 10 holders' share of circulating supply (curve vault excluded)"
+						>
+							Top 10
+						</th>
 						<th className="px-3 py-2 text-right font-normal">Risk</th>
 					</tr>
 				</thead>
@@ -165,27 +170,45 @@ const PoolTable = ({
 							className={`border-t border-white/5 hover:bg-white/[0.04] ${freshPools.has(p.pool) ? 'animate-flash' : ''}`}
 						>
 							<td className="px-3 py-2">
-								<Link href={`/pool/${p.pool}`} className="font-medium hover:text-sky-300">
-									{tokenLabel(p)}
+								<Link
+									href={`/pool/${p.pool}`}
+									className="flex items-center gap-2.5 hover:text-sky-300"
+								>
+									<TokenImage src={p.image} label={tokenLabel(p)} />
+									<span className="min-w-0">
+										<span className="block font-medium">{tokenLabel(p)}</span>
+										{p.name && (
+											<span className="block max-w-36 truncate text-xs text-white/40">
+												{p.name}
+											</span>
+										)}
+									</span>
 								</Link>
-								{p.name && <div className="max-w-40 truncate text-xs text-white/40">{p.name}</div>}
 							</td>
 							<td className="px-3 py-2 font-mono text-xs text-white/60">
 								{age(tab === 'graduated' ? p.graduatedAt : (p.createdAt ?? p.firstSeenAt), now)}
+								{tab === 'graduated' && p.timeToGraduateMs !== null && (
+									<span
+										className={`block ${p.timeToGraduateMs < 60_000 ? 'text-amber-300' : 'text-white/40'}`}
+										title="Time from pool creation to curve completion"
+									>
+										in {duration(p.timeToGraduateMs)}
+									</span>
+								)}
 							</td>
 							<td className="px-3 py-2 font-mono text-xs">{price(p.priceUsd)}</td>
 							<td className="px-3 py-2">
 								<ProgressBar value={p.progress} graduated={p.graduatedAt !== null} />
 							</td>
 							<td className="px-3 py-2 text-right font-mono text-xs">{usd(p.volume5m)}</td>
-							<td className="px-3 py-2 text-right font-mono text-xs">{usd(p.volume)}</td>
+							<td className="px-3 py-2 text-right font-mono text-xs">{usd(p.mcapUsd)}</td>
 							<td className="px-3 py-2 text-right font-mono text-xs">
 								<span className="text-emerald-300">{p.buys}</span>
 								<span className="text-white/30"> / </span>
 								<span className="text-red-300">{p.sells}</span>
 							</td>
-							<td className="px-3 py-2 text-right font-mono text-xs">{p.uniqueTraders}</td>
-							<td className="px-3 py-2 text-right font-mono text-xs">{pct(p.topBuyerShare, 0)}</td>
+							<td className="px-3 py-2 text-right font-mono text-xs">{p.holders ?? '—'}</td>
+							<td className="px-3 py-2 text-right font-mono text-xs">{pct(p.top10Pct, 0)}</td>
 							<td className="px-3 py-2 text-right">
 								<RiskBadge score={p.risk.score} flags={p.risk.flags} />
 							</td>
