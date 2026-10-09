@@ -1,0 +1,23 @@
+{
+	"name": "@dbc-radar/indexer",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "bun --watch src/index.ts",
+		"start": "bun src/index.ts"
+	},
+	"dependencies": {
+		"@coral-xyz/anchor": "^0.32.1",
+		"@meteora-ag/dynamic-bonding-curve-sdk": "^1.5.13",
+		"@solana/web3.js": "^1.99.0",
+		"@triton-one/yellowstone-grpc": "^9.0.0",
+		"bs58": "^6.0.0"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.4.2",
+		"typescript": "^7.0.2"
+	},
+	"exports": {
+		"./types": "./src/public-types.ts"
+	}
+}
