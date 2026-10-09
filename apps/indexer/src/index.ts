@@ -1,14 +1,18 @@
+import { createAlerts } from './alerts'
 import { startServer } from './api/server'
 import { config } from './config'
+import { createConfigStore } from './dbc-configs'
 import { createEnricher } from './enrich'
 import { createIngestor } from './ingest'
 import { createMetrics } from './metrics'
 import { createPriceFeed } from './prices'
+import { createRiskWatcher } from './risk-watch'
 import { createBlurStream } from './sources/blur'
 import { createRpcSource } from './sources/rpc'
 import type { TxSource } from './sources/types'
 import { createYellowstoneSource } from './sources/yellowstone'
 import { openDb } from './store/db'
+import { telemetry } from './telemetry'
 
 const db = openDb(config.dbPath)
 const backfillUsd = db.query(`
@@ -28,8 +32,17 @@ for (const { quote_mint } of db
 	.all()) {
 	prices.quoteToUsd(quote_mint, 0)
 }
-const ingestor = createIngestor(db, prices)
-const metrics = createMetrics(db, prices)
+const configs = createConfigStore(db)
+configs.start()
+const metrics = createMetrics(db, prices, configs)
+let risk: ReturnType<typeof createRiskWatcher> | null = null
+const ingestor = createIngestor(db, prices, (pool) => risk?.creatorSold(pool))
+risk = createRiskWatcher(metrics, ingestor.publish)
+risk.start()
+const alerts = createAlerts(db, metrics, ingestor.publish)
+ingestor.subscribe(alerts.onEvent, true)
+console.log(`[alerts] ${alerts.describe()}`)
+await alerts.start()
 const enricher = createEnricher(db)
 const blur = config.solamiApiKey ? createBlurStream(enricher.handleBlur) : null
 if (config.solamiApiKey) {
@@ -47,7 +60,8 @@ if (config.source === 'rpc') {
 
 await source.start((tx) => {
 	try {
-		ingestor.handle(tx)
+		const events = ingestor.handle(tx)
+		if (source.name === 'grpc') telemetry.grpcTx(tx.signature, tx.slot, tx.receivedAt, events > 0)
 	} catch (error) {
 		console.error(`[indexer] failed to ingest ${tx.signature}`, error)
 	}
@@ -57,15 +71,24 @@ const server = startServer({
 	port: config.port,
 	sourceName: source.name,
 	sourceStats: source.stats,
-	components: { enricher: enricher.stats, ...(blur ? { blur: blur.stats } : {}) },
+	components: {
+		enricher: enricher.stats,
+		configs: configs.stats,
+		...(blur ? { blur: blur.stats } : {}),
+	},
 	metrics,
 	ingestor,
+	alerts,
+	blurConnected: () => blur?.stats.connected === 1,
 })
 console.log(`[indexer] API listening on http://localhost:${server.port}`)
 
 const shutdown = async () => {
 	await source.stop()
 	prices.stop()
+	configs.stop()
+	risk.stop()
+	alerts.stop()
 	enricher.stop()
 	blur?.stop()
 	server.stop()

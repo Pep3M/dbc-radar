@@ -3,6 +3,7 @@ import type { LiveEvent } from './domain/api'
 import type { DbcEvent, RawTx, Swap } from './domain/types'
 import type { PriceFeed } from './prices'
 import type { Db } from './store/db'
+import { telemetry } from './telemetry'
 
 const POOL_AUTHORITY = 'FhVo3mqL8PW5pH5U2CN4XE33DokiyZnUwuGpH2hmHLuM'
 
@@ -39,8 +40,15 @@ const mintsFromBalances = (tx: RawTx, knownBase?: string): PoolMints | null => {
 	}
 }
 
-export const createIngestor = (db: Db, prices: PriceFeed) => {
+export const createIngestor = (
+	db: Db,
+	prices: PriceFeed,
+	/** Called (inside the write transaction) the first time a pool's creator sells. */
+	onCreatorSold: (pool: string, ts: number) => void = () => {},
+) => {
 	const listeners = new Set<(event: LiveEvent) => void>()
+	let pushedThisTx = 0
+	let internalListeners = 0
 	const health = { txs: 0, events: 0, lastEventAt: 0, startedAt: Date.now() }
 
 	const getPool = db.query<
@@ -49,9 +57,22 @@ export const createIngestor = (db: Db, prices: PriceFeed) => {
 			quote_mint: string | null
 			base_decimals: number | null
 			quote_decimals: number | null
+			creator: string | null
+			symbol: string | null
 		},
 		[string]
-	>('SELECT base_mint, quote_mint, base_decimals, quote_decimals FROM pools WHERE pool = ?')
+	>(`
+		SELECT p.base_mint, p.quote_mint, p.base_decimals, p.quote_decimals, p.creator, t.symbol
+		FROM pools p LEFT JOIN tokens t ON t.mint = p.base_mint WHERE p.pool = ?
+	`)
+
+	const symbolOf = db.query<{ symbol: string | null }, [string]>(
+		'SELECT symbol FROM tokens WHERE mint = ?',
+	)
+
+	const creatorSoldBefore = db.query<{ n: number }, [string, string]>(
+		"SELECT 1 AS n FROM trades WHERE pool = ? AND trader = ? AND side = 'sell' LIMIT 1",
+	)
 
 	const upsertCreated = db.query(`
 		INSERT INTO pools (pool, config, base_mint, creator, created_at, created_slot, created_signature, first_seen_at)
@@ -82,8 +103,8 @@ export const createIngestor = (db: Db, prices: PriceFeed) => {
 	`)
 
 	const insertTrade = db.query(`
-		INSERT OR IGNORE INTO trades (signature, idx, pool, trader, side, quote_amount, usd_amount, base_amount, price, slot, ts)
-		VALUES ($signature, $idx, $pool, $trader, $side, $quoteAmount, $usdAmount, $baseAmount, $price, $slot, $ts)
+		INSERT OR IGNORE INTO trades (signature, idx, pool, trader, side, quote_amount, usd_amount, base_amount, price, quote_reserve, slot, ts)
+		VALUES ($signature, $idx, $pool, $trader, $side, $quoteAmount, $usdAmount, $baseAmount, $price, $quoteReserve, $slot, $ts)
 	`)
 
 	const markGraduated = db.query(
@@ -92,6 +113,7 @@ export const createIngestor = (db: Db, prices: PriceFeed) => {
 
 	const emit = (event: LiveEvent) => {
 		for (const listener of listeners) listener(event)
+		pushedThisTx += listeners.size - internalListeners
 	}
 
 	const applySwap = (tx: RawTx, swap: Swap, idx: number, ts: number) => {
@@ -112,8 +134,13 @@ export const createIngestor = (db: Db, prices: PriceFeed) => {
 			pool?.base_decimals == null ? null : sqrt * sqrt * 10 ** (baseDecimals - quoteDecimals)
 		const threshold = Number(swap.migrationThreshold)
 		const progress = threshold > 0 ? Math.min(Number(swap.quoteReserve) / threshold, 1) : null
+		const quoteReserve = Number(swap.quoteReserve) / 10 ** quoteDecimals
+		const isCreatorSell =
+			swap.side === 'sell' &&
+			pool?.creator === swap.trader &&
+			!creatorSoldBefore.get(swap.pool, swap.trader)
 
-		insertTrade.run({
+		const { changes } = insertTrade.run({
 			signature: tx.signature,
 			idx,
 			pool: swap.pool,
@@ -123,6 +150,7 @@ export const createIngestor = (db: Db, prices: PriceFeed) => {
 			usdAmount,
 			baseAmount,
 			price,
+			quoteReserve,
 			slot: tx.slot,
 			ts,
 		})
@@ -130,13 +158,14 @@ export const createIngestor = (db: Db, prices: PriceFeed) => {
 			pool: swap.pool,
 			ts,
 			price,
-			quoteReserve: Number(swap.quoteReserve) / 10 ** quoteDecimals,
+			quoteReserve,
 			threshold: threshold / 10 ** quoteDecimals,
 			progress,
 		})
 		emit({
 			type: 'trade',
 			pool: swap.pool,
+			symbol: pool?.symbol ?? null,
 			side: swap.side,
 			trader: swap.trader,
 			quoteAmount,
@@ -145,6 +174,7 @@ export const createIngestor = (db: Db, prices: PriceFeed) => {
 			progress,
 			ts,
 		})
+		if (isCreatorSell && changes > 0) onCreatorSold(swap.pool, ts)
 	}
 
 	const apply = (tx: RawTx, events: DbcEvent[]) => {
@@ -166,6 +196,7 @@ export const createIngestor = (db: Db, prices: PriceFeed) => {
 						pool: event.pool,
 						baseMint: event.baseMint,
 						creator: event.creator,
+						symbol: symbolOf.get(event.baseMint)?.symbol ?? null,
 						ts,
 					})
 					break
@@ -184,17 +215,30 @@ export const createIngestor = (db: Db, prices: PriceFeed) => {
 
 	return {
 		health,
+		/** Returns the number of DBC events in the tx. */
 		handle(tx: RawTx) {
+			const startedAt = performance.now()
 			health.txs++
 			const events = decodeDbcEvents(tx)
-			if (events.length === 0) return
-			health.events += events.length
-			health.lastEventAt = Date.now()
-			applyTx(tx, events)
+			if (events.length > 0) {
+				health.events += events.length
+				health.lastEventAt = Date.now()
+				pushedThisTx = 0
+				applyTx(tx, events)
+				telemetry.pushed(tx.slot, pushedThisTx)
+			}
+			telemetry.processed(performance.now() - startedAt, events.length)
+			return events.length
 		},
-		subscribe(listener: (event: LiveEvent) => void) {
+		/** Publishes an event that doesn't come from a tx (e.g. risk flags from the watcher). */
+		publish: emit,
+		/** `internal` listeners (alerts) don't count as SSE pushes in telemetry. */
+		subscribe(listener: (event: LiveEvent) => void, internal = false) {
 			listeners.add(listener)
-			return () => listeners.delete(listener)
+			if (internal) internalListeners++
+			return () => {
+				if (listeners.delete(listener) && internal) internalListeners--
+			}
 		},
 	}
 }

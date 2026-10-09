@@ -1,4 +1,5 @@
 import { config } from '../config'
+import { telemetry } from '../telemetry'
 
 export type TokenMetadata = {
 	address: string
@@ -26,12 +27,20 @@ export type HoldersResponse = {
 const get = async <T>(path: string, params: Record<string, string>): Promise<T> => {
 	const query = new URLSearchParams({ chain: 'solana', ...params })
 	// Header auth keeps the key out of URLs, and therefore out of proxy and access logs.
-	const res = await fetch(`${config.dataApiUrl}${path}?${query}`, {
-		headers: { 'x-api-key': config.solamiApiKey },
-		signal: AbortSignal.timeout(10_000),
-	})
-	if (!res.ok) throw new Error(`Solami Data API ${path} → ${res.status}`)
-	return res.json() as Promise<T>
+	const startedAt = performance.now()
+	try {
+		const res = await fetch(`${config.dataApiUrl}${path}?${query}`, {
+			headers: { 'x-api-key': config.solamiApiKey },
+			signal: AbortSignal.timeout(10_000),
+		})
+		if (!res.ok) throw new Error(`Solami Data API ${path} → ${res.status}`)
+		const body = (await res.json()) as T
+		telemetry.dataApiRequest(performance.now() - startedAt, true)
+		return body
+	} catch (error) {
+		telemetry.dataApiRequest(performance.now() - startedAt, false)
+		throw error
+	}
 }
 
 export const dataApi = {

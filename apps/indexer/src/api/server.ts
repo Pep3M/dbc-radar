@@ -1,6 +1,8 @@
+import type { Alerts } from '../alerts'
 import type { PoolSort } from '../domain/api'
 import type { Ingestor } from '../ingest'
 import type { Metrics } from '../metrics'
+import { telemetry } from '../telemetry'
 
 const SORTS = new Set<PoolSort>(['new', 'hot', 'progress'])
 
@@ -20,6 +22,8 @@ export const startServer = (opts: {
 	components?: Record<string, Record<string, number>>
 	metrics: Metrics
 	ingestor: Ingestor
+	alerts: Alerts
+	blurConnected: () => boolean
 }) => {
 	const { metrics, ingestor } = opts
 
@@ -39,6 +43,8 @@ export const startServer = (opts: {
 					uptimeMs: Date.now() - ingestor.health.startedAt,
 				}),
 			'/api/stats': () => json(metrics.stats()),
+			'/api/pipeline': () => json(telemetry.snapshot(opts.sourceName, opts.blurConnected())),
+			'/api/alerts': () => json(opts.alerts.state()),
 			'/api/pools': (req) => {
 				const url = new URL(req.url)
 				const sort = url.searchParams.get('sort') as PoolSort
@@ -64,7 +70,15 @@ export const startServer = (opts: {
 						const send = (data: unknown) =>
 							controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
 						send({ type: 'hello', source: opts.sourceName })
-						unsubscribe = ingestor.subscribe(send)
+						const off = ingestor.subscribe(send)
+						telemetry.sseClients(1)
+						let closed = false
+						unsubscribe = () => {
+							if (closed) return
+							closed = true
+							off()
+							telemetry.sseClients(-1)
+						}
 						req.signal.addEventListener('abort', () => unsubscribe())
 					},
 					cancel() {

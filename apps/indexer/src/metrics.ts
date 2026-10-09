@@ -1,10 +1,13 @@
+import { type ConfigStore, launchpadFor, quoteSymbolFor } from './dbc-configs'
 import type {
 	Candle,
+	FlowBucket,
 	GlobalStats,
 	PoolDetail,
 	PoolSort,
 	PoolSummary,
 	RiskFlag,
+	TopHolder,
 	TradeRow,
 } from './domain/api'
 import type { PriceFeed } from './prices'
@@ -12,7 +15,13 @@ import type { Db } from './store/db'
 
 type PoolRow = {
 	pool: string
+	config: string
 	base_mint: string | null
+	base_decimals: number | null
+	quote_decimals: number | null
+	damm_pool: string | null
+	quote_token_symbol: string | null
+	fee_claimer: string | null
 	quote_mint: string | null
 	creator: string | null
 	name: string | null
@@ -52,6 +61,7 @@ const POOL_SELECT = `
 	SELECT p.*,
 		tk.name, tk.symbol, tk.image, tk.twitter, tk.website, tk.mcap_usd, tk.liquidity_usd,
 		tk.holders, tk.top10_pct, tk.bot_pct, tk.fresh_holders,
+		qt.symbol AS quote_token_symbol, cfg.fee_claimer,
 		count(t.signature) AS trades,
 		coalesce(sum(t.side = 'buy'), 0) AS buys,
 		coalesce(sum(t.side = 'sell'), 0) AS sells,
@@ -71,8 +81,19 @@ const POOL_SELECT = `
 		coalesce(sum(CASE WHEN t.side = 'sell' AND t.trader = p.creator THEN t.usd_amount END), 0) AS creator_sold
 	FROM pools p
 	LEFT JOIN tokens tk ON tk.mint = p.base_mint
+	LEFT JOIN tokens qt ON qt.mint = p.quote_mint
+	LEFT JOIN dbc_configs cfg ON cfg.config = p.config
 	LEFT JOIN trades t ON t.pool = p.pool
 `
+
+export const RISK_WEIGHTS: Record<RiskFlag, number> = {
+	creator_sold: 40,
+	whale_buyer: 25,
+	wash_trading: 20,
+	dumping: 15,
+	concentrated: 25,
+	fresh_wallets: 15,
+}
 
 const assessRisk = (row: PoolRow) => {
 	const flags: RiskFlag[] = []
@@ -84,17 +105,9 @@ const assessRisk = (row: PoolRow) => {
 	if (row.top10_pct !== null && (row.holders ?? 0) >= 20 && row.top10_pct > 0.5)
 		flags.push('concentrated')
 	if (row.fresh_holders !== null && row.fresh_holders >= 5) flags.push('fresh_wallets')
-	const weights: Record<RiskFlag, number> = {
-		creator_sold: 40,
-		whale_buyer: 25,
-		wash_trading: 20,
-		dumping: 15,
-		concentrated: 25,
-		fresh_wallets: 15,
-	}
 	return {
 		score: Math.min(
-			flags.reduce((acc, f) => acc + weights[f], 0),
+			flags.reduce((acc, f) => acc + RISK_WEIGHTS[f], 0),
 			100,
 		),
 		flags,
@@ -105,6 +118,8 @@ const toSummary = (row: PoolRow): Omit<PoolSummary, 'priceUsd'> => ({
 	pool: row.pool,
 	baseMint: row.base_mint,
 	quoteMint: row.quote_mint,
+	quoteSymbol: quoteSymbolFor(row.quote_mint, row.quote_token_symbol),
+	launchpad: launchpadFor(row.fee_claimer, row.base_mint),
 	creator: row.creator,
 	name: row.name,
 	symbol: row.symbol,
@@ -146,7 +161,10 @@ const ORDER_BY: Record<PoolSort, string> = {
 	progress: 'p.progress DESC NULLS LAST',
 }
 
-export const createMetrics = (db: Db, prices: PriceFeed) => {
+const FLOW_5M = { windowMs: 5 * 60_000, bucketMs: 10_000 }
+const FLOW_1H = { windowMs: 60 * 60_000, bucketMs: 60_000 }
+
+export const createMetrics = (db: Db, prices: PriceFeed, configs: ConfigStore) => {
 	const summarize = (row: PoolRow): PoolSummary => {
 		const summary = toSummary(row)
 		const priceUsd =
@@ -174,9 +192,45 @@ export const createMetrics = (db: Db, prices: PriceFeed) => {
 		`${POOL_SELECT} WHERE p.graduated_at IS NOT NULL GROUP BY p.pool ORDER BY p.graduated_at DESC LIMIT $limit`,
 	)
 
-	const recentTrades = db.query<TradeRow, { pool: string; limit: number }>(
-		'SELECT signature, trader, side, quote_amount, usd_amount, base_amount, price, ts FROM trades WHERE pool = $pool ORDER BY ts DESC, idx DESC LIMIT $limit',
+	const activeQuery = db.query<PoolRow, { since5m: number; activeSince: number; limit: number }>(
+		`${POOL_SELECT} WHERE p.last_trade_at >= $activeSince GROUP BY p.pool LIMIT $limit`,
 	)
+
+	const recentTrades = db.query<TradeRow, { pool: string; limit: number }>(
+		'SELECT signature, trader, side, quote_amount, usd_amount, base_amount, price, quote_reserve, ts FROM trades WHERE pool = $pool ORDER BY ts DESC, idx DESC LIMIT $limit',
+	)
+
+	const flowQuery = db.query<FlowBucket, { pool: string; since: number; bucketMs: number }>(`
+		SELECT ts / $bucketMs * $bucketMs AS bucket,
+			coalesce(sum(CASE WHEN side = 'buy' THEN usd_amount END), 0) AS buyUsd,
+			coalesce(sum(CASE WHEN side = 'sell' THEN usd_amount END), 0) AS sellUsd
+		FROM trades WHERE pool = $pool AND ts >= $since
+		GROUP BY bucket
+	`)
+
+	const holdersTopQuery = db.query<{ holders_top: string | null }, [string]>(
+		'SELECT holders_top FROM tokens WHERE mint = ?',
+	)
+
+	// Zero-filled so the chart always has a fixed number of bars ending at "now".
+	const flow = (pool: string, { windowMs, bucketMs }: typeof FLOW_5M): FlowBucket[] => {
+		const end = Math.floor(Date.now() / bucketMs) * bucketMs
+		const start = end - windowMs + bucketMs
+		const rows = new Map(flowQuery.all({ pool, since: start, bucketMs }).map((r) => [r.bucket, r]))
+		const out: FlowBucket[] = []
+		for (let bucket = start; bucket <= end; bucket += bucketMs)
+			out.push(rows.get(bucket) ?? { bucket, buyUsd: 0, sellUsd: 0 })
+		return out
+	}
+
+	const holdersTop = (row: PoolRow): TopHolder[] => {
+		if (!row.base_mint) return []
+		const raw = holdersTopQuery.get(row.base_mint)?.holders_top
+		if (!raw) return []
+		return (JSON.parse(raw) as TopHolder[]).map((h) =>
+			h.address === row.creator ? { ...h, tags: ['creator', ...h.tags] } : h,
+		)
+	}
 
 	const candles = db.query<Candle, { pool: string; bucketMs: number }>(`
 		SELECT bucket,
@@ -213,7 +267,26 @@ export const createMetrics = (db: Db, prices: PriceFeed) => {
 				...summarize(row),
 				recentTrades: recentTrades.all({ pool, limit: 50 }),
 				candles: candles.all({ pool, bucketMs: 60_000 }),
+				holdersTop: holdersTop(row),
+				flow5m: flow(pool, FLOW_5M),
+				flow1h: flow(pool, FLOW_1H),
+				curve: configs.curveFor(row.config, row.base_decimals, row.quote_decimals),
+				dammPool:
+					row.graduated_at === null
+						? null
+						: (row.damm_pool ?? configs.dammPoolFor(row.config, row.base_mint, row.quote_mint)),
 			}
+		},
+		getSummary(pool: string): PoolSummary | null {
+			const row = oneQuery.get({ since5m: Date.now() - 5 * 60_000, pool })
+			return row ? summarize(row) : null
+		},
+		/** Pools that traded recently, for the risk watcher. */
+		listActive(activeMs: number, limit: number) {
+			const now = Date.now()
+			return activeQuery
+				.all({ since5m: now - 5 * 60_000, activeSince: now - activeMs, limit })
+				.map(summarize)
 		},
 		stats(): GlobalStats | null {
 			const now = Date.now()

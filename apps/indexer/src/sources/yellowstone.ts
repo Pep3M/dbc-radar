@@ -8,14 +8,29 @@ import bs58 from 'bs58'
 import { config } from '../config'
 import { DBC_PROGRAM_ID } from '../decoder/dbc'
 import type { RawTx } from '../domain/types'
+import { telemetry } from '../telemetry'
 import type { TxSource } from './types'
 
 const PING_INTERVAL_MS = 15_000
 const MAX_BACKOFF_MS = 30_000
+// connect/subscribe can hang forever (e.g. while the server still holds a previous stream);
+// slot updates arrive every ~400 ms, so this much silence means the stream is dead.
+const CONNECT_TIMEOUT_MS = 20_000
+const STALL_TIMEOUT_MS = 30_000
+
+const withTimeout = <T>(promise: Promise<T>, ms: number, what: string) =>
+	Promise.race([
+		promise,
+		new Promise<never>((_, reject) =>
+			setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms),
+		),
+	])
 
 const buildRequest = (fromSlot?: number): SubscribeRequest => ({
 	accounts: {},
-	slots: {},
+	// Slot updates (all statuses, inter-slot included) give the latency reference: the first
+	// moment this process hears of a slot. Cheap: ~2.5 slots/s × a few statuses.
+	slots: { ref: { filterByCommitment: false, interslotUpdates: true } },
 	transactions: {
 		dbc: {
 			vote: false,
@@ -31,7 +46,8 @@ const buildRequest = (fromSlot?: number): SubscribeRequest => ({
 	entry: {},
 	blockFooter: {},
 	accountsDataSlice: [],
-	commitment: CommitmentLevel.CONFIRMED,
+	commitment:
+		config.grpcCommitment === 'confirmed' ? CommitmentLevel.CONFIRMED : CommitmentLevel.PROCESSED,
 	fromSlot: fromSlot === undefined ? undefined : String(fromSlot),
 })
 
@@ -75,17 +91,34 @@ export const createYellowstoneSource = (): TxSource => {
 
 	const connect = async (onTx: (tx: RawTx) => void): Promise<void> => {
 		const client = new Client(config.grpcUrl, config.solamiApiKey, undefined)
-		await client.connect()
-		const stream = await client.subscribe(buildRequest(stats.lastSlot || undefined))
+		await withTimeout(client.connect(), CONNECT_TIMEOUT_MS, 'connect')
+		const stream = await withTimeout(
+			client.subscribe(buildRequest(stats.lastSlot || undefined)),
+			CONNECT_TIMEOUT_MS,
+			'subscribe',
+		)
 		current = stream
 		stats.connectedAt = Date.now()
+		telemetry.grpc.connectedAt = stats.connectedAt
 
 		pingTimer = setInterval(() => stream.write(buildPing()), PING_INTERVAL_MS)
+		let lastDataAt = Date.now()
+		let watchdog: ReturnType<typeof setInterval> | undefined
 
 		await new Promise<void>((resolve) => {
+			watchdog = setInterval(() => {
+				if (Date.now() - lastDataAt < STALL_TIMEOUT_MS) return
+				console.warn(`[grpc] no data for ${STALL_TIMEOUT_MS / 1000}s, reconnecting`)
+				resolve()
+			}, 5_000)
 			stream.on('data', (update: SubscribeUpdate) => {
+				lastDataAt = Date.now()
 				if (update.ping) {
 					stream.write(buildPing())
+					return
+				}
+				if (update.slot) {
+					telemetry.slotSeen(Number(update.slot.slot))
 					return
 				}
 				if (!update.transaction) return
@@ -102,6 +135,9 @@ export const createYellowstoneSource = (): TxSource => {
 			stream.on('end', () => resolve())
 		})
 		clearInterval(pingTimer)
+		clearInterval(watchdog)
+		telemetry.grpc.connectedAt = 0
+		stats.connectedAt = 0
 		stream.destroy()
 	}
 
@@ -133,6 +169,7 @@ export const createYellowstoneSource = (): TxSource => {
 						if (stopped) return
 						if (Date.now() - startedAt > 60_000) backoff = 500
 						stats.reconnects++
+						telemetry.grpc.reconnects = stats.reconnects
 						console.warn(`[grpc] reconnecting from slot ${stats.lastSlot} in ${backoff}ms`)
 						await Bun.sleep(backoff)
 						backoff = Math.min(backoff * 2, MAX_BACKOFF_MS)

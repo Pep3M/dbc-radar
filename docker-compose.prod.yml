@@ -4,6 +4,8 @@
 # Dokploy → Environment:
 #   SOLAMI_API_KEY=...       (required)
 #   IMAGE_TAG=latest         (optional)
+#   TELEGRAM_BOT_TOKEN=...   (optional: subscriber bot; only ONE process may poll it)
+#   TELEGRAM_CHAT_ID / ALERT_* (optional, see apps/indexer/.env.example)
 #
 # Dokploy → Domains: route the origin hostname to service `web`, port 3000.
 # Only `web` is reachable from outside; it proxies /dbc-radar/api/* to the indexer.
@@ -16,6 +18,15 @@ services:
     restart: unless-stopped
     environment:
       SOLAMI_API_KEY: ${SOLAMI_API_KEY:?SOLAMI_API_KEY is required}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_POLLING: ${TELEGRAM_POLLING:-1}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:-}
+      ALERT_CURVE_THRESHOLD: ${ALERT_CURVE_THRESHOLD:-0.8}
+      ALERT_FLAGS: ${ALERT_FLAGS:-creator_sold}
+      ALERT_GRADUATIONS: ${ALERT_GRADUATIONS:-1}
+      ALERT_SKIP_FAST_GRADUATIONS_MS: ${ALERT_SKIP_FAST_GRADUATIONS_MS:-60000}
     volumes:
       - dbc-radar-data:/data
     networks:
