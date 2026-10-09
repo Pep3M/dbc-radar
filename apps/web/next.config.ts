@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
 	env: { NEXT_PUBLIC_BASE_PATH: basePath },
 	// In production a reverse proxy routes `${basePath}/api` straight to the indexer;
 	// this rewrite only matters for `next dev` / `next start` without one.
+	// The origin hostname is noindex; the edge Worker strips this header on pep3marquez.com.
+	async headers() {
+		return [{ source: '/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex' }] }]
+	},
 	async rewrites() {
 		return [{ source: '/api/:path*', destination: `${indexerUrl}/api/:path*` }]
 	},

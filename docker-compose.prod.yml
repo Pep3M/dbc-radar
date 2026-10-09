@@ -1,0 +1,48 @@
+# Production compose for Dokploy. Images are built by GitHub Actions and pushed to GHCR;
+# the server only pulls.
+#
+# Dokploy → Environment:
+#   SOLAMI_API_KEY=...       (required)
+#   IMAGE_TAG=latest         (optional)
+#
+# Dokploy → Domains: route the origin hostname to service `web`, port 3000.
+# Only `web` is reachable from outside; it proxies /dbc-radar/api/* to the indexer.
+
+services:
+  indexer:
+    image: ${INDEXER_IMAGE:-ghcr.io/pep3m/dbc-radar/indexer}:${IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: dbc-radar-indexer
+    restart: unless-stopped
+    environment:
+      SOLAMI_API_KEY: ${SOLAMI_API_KEY:?SOLAMI_API_KEY is required}
+    volumes:
+      - dbc-radar-data:/data
+    networks:
+      - dbc-radar
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  web:
+    image: ${WEB_IMAGE:-ghcr.io/pep3m/dbc-radar/web}:${IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: dbc-radar-web
+    restart: unless-stopped
+    depends_on:
+      indexer:
+        condition: service_healthy
+    networks:
+      - dbc-radar
+      - dokploy-network
+
+volumes:
+  dbc-radar-data:
+
+networks:
+  dbc-radar:
+  dokploy-network:
+    external: true

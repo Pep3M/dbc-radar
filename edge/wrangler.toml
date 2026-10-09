@@ -1,0 +1,8 @@
+name = "dbc-radar-edge"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+workers_dev = false
+routes = [{ pattern = "pep3marquez.com/dbc-radar*", zone_name = "pep3marquez.com" }]
+
+[vars]
+ORIGIN = "https://radar-origin.pep3marquez.com"
