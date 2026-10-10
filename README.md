@@ -9,10 +9,16 @@
 
 <p align="center">
   <a href="https://pep3marquez.com/dbc-radar"><b>Live app</b></a> ·
+  <a href="https://youtu.be/M3vhqsHJF-0"><b>Demo video</b></a> ·
   <a href="https://pep3marquez.com/dbc-radar/about">Under the hood</a> ·
   <a href="https://t.me/dbcradar_bot">Telegram alerts</a> ·
   <a href="#run-it-locally">Run it locally</a> ·
   <a href="#api">API</a>
+</p>
+
+<p align="center">
+  <a href="https://youtu.be/M3vhqsHJF-0"><img src="docs/screenshots/demo-video.png" alt="Watch the DBC Radar demo (2:56)" width="720"></a><br>
+  <sub>Live on Solana mainnet, recorded on the production site · <a href="https://youtu.be/JSjhEzoZ-vA">versión en español</a></sub>
 </p>
 
 ---
