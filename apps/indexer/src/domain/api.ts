@@ -1,6 +1,15 @@
 /** Types shared with the web app. Keep this file free of runtime imports. */
 
-export type LiveEvent =
+export type LiveEvent = LiveEventBody & {
+	/**
+	 * Events decoded from a tx: the server's wall-clock ms when it first saw the tx's slot
+	 * (same reference as /api/pipeline). Browsers subtract it from their offset-corrected
+	 * clock (see /api/time) to measure slot → receive → paint on their side.
+	 */
+	slotAt?: number
+}
+
+type LiveEventBody =
 	| {
 			type: 'pool_created'
 			pool: string
@@ -163,8 +172,9 @@ export type Health = {
  *   signature with the gRPC copy (so the two numbers are directly comparable).
  * - dataApi.latencyP50Ms: HTTP round trip of Data API requests.
  * - indexer.processP50Ms: decode + SQLite write + in-process fan-out time per tx with events.
- * - sse.chainToScreenP50Ms: SSE push time minus slot reference (server side; excludes the
- *   network hop to the browser).
+ * - sse.slotToPushP50Ms: SSE push time minus slot reference (server side; excludes the
+ *   network hop to the browser and rendering, which each browser measures itself from
+ *   `LiveEvent.slotAt`).
  */
 export type PipelineComponent = {
 	connected: boolean
@@ -193,7 +203,7 @@ export type Pipeline = {
 	blur: PipelineComponent
 	dataApi: PipelineComponent
 	indexer: { perMin: number; eventsPerMin: number; processP50Ms: number | null }
-	sse: { clients: number; pushesPerMin: number; chainToScreenP50Ms: number | null }
+	sse: { clients: number; pushesPerMin: number; slotToPushP50Ms: number | null }
 	/** Share (0..1) of matched signatures where gRPC arrived before Blur; null if none matched. */
 	grpcFirstShare: number | null
 	/** Last ~100 gRPC txs with DBC events, oldest first. */

@@ -2,7 +2,13 @@
 
 import { createContext, type ReactNode, useContext } from 'react'
 import { api, type Health } from '@/lib/api'
-import { type FeedItem, type LiveListener, useLiveStream, usePolling } from '@/lib/hooks'
+import {
+	type BrowserLatency,
+	type FeedItem,
+	type LiveListener,
+	useLiveStream,
+	usePolling,
+} from '@/lib/hooks'
 
 export type StreamState = {
 	/** Latest live events, newest first (max 60), flushed at 4 Hz. */
@@ -11,6 +17,8 @@ export type StreamState = {
 	connected: boolean
 	/** Events received by this browser in the trailing 60 s. */
 	eventsPerMinute: number
+	/** Slot → receive / paint measured in this tab (refreshed every 2 s). */
+	latency: BrowserLatency
 	/** Indexer health, polled every 5 s (null until the first response). */
 	health: Health | null
 	/** The health endpoint is failing: indexer unreachable. */

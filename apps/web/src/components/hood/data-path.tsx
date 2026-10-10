@@ -93,7 +93,7 @@ const SourceNode = ({
 )
 
 export const DataPath = ({ pipeline }: { pipeline: Pipeline | null }) => {
-	const { subscribe } = useStream()
+	const { subscribe, latency } = useStream()
 	const reduced = useReducedMotion()
 	const rootRef = useRef<HTMLDivElement>(null)
 	const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -326,12 +326,15 @@ export const DataPath = ({ pipeline }: { pipeline: Pipeline | null }) => {
 					<span className="font-display text-display-m font-bold">DBC Radar</span>
 					<div className="grid grid-cols-2 gap-2 font-mono tabular-nums">
 						<Metric label="PUSHES" value={rate(p?.sse.pushesPerMin)} />
-						<Metric
-							label="SLOT → SSE PUSH"
-							value={ms(p?.sse.chainToScreenP50Ms)}
-							className="text-signal"
-						/>
+						<Metric label="SLOT → SSE PUSH" value={ms(p?.sse.slotToPushP50Ms)} />
+						<Metric label="→ THIS BROWSER" value={ms(latency.receiveP50Ms)} />
+						<Metric label="→ PAINTED" value={ms(latency.paintP50Ms)} className="text-signal" />
 					</div>
+					<span className="font-mono text-[9px] leading-snug text-ink-3">
+						Browser p50s measured in this tab, clock synced to the indexer
+						{latency.rttMs == null ? '' : ` ±${Math.round(latency.rttMs / 2)}ms`}. Painted includes
+						the feed's 4 Hz batching.
+					</span>
 				</div>
 			</div>
 		</div>

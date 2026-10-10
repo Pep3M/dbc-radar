@@ -73,7 +73,7 @@ const createTelemetry = () => {
 	const blur = link()
 	const dataApi = link()
 	const indexer = { txs: rate(), events: rate(), process: median() }
-	const sse = { clients: 0, pushes: rate(), chainToScreen: median() }
+	const sse = { clients: 0, pushes: rate(), slotToPush: median() }
 
 	const slotSeen = new Map<number, number>()
 	const samples: LatencySample[] = []
@@ -87,6 +87,8 @@ const createTelemetry = () => {
 		grpc,
 		blur,
 		dataApi,
+		/** Wall-clock ms when this process first saw `slot` (undefined if not seen or evicted). */
+		slotRef,
 		/** Any slot update from Yellowstone; only the first sighting per slot counts. */
 		slotSeen(slot: number, at = Date.now()) {
 			if (slotSeen.has(slot)) return
@@ -160,7 +162,7 @@ const createTelemetry = () => {
 			if (messages === 0) return
 			sse.pushes.add(messages)
 			const ref = slotRef(slot)
-			if (ref !== undefined) sse.chainToScreen.add(Date.now() - ref)
+			if (ref !== undefined) sse.slotToPush.add(Date.now() - ref)
 		},
 		sseClients(delta: number) {
 			sse.clients += delta
@@ -182,7 +184,7 @@ const createTelemetry = () => {
 				sse: {
 					clients: sse.clients,
 					pushesPerMin: sse.pushes.perMin(),
-					chainToScreenP50Ms: sse.chainToScreen.p50(),
+					slotToPushP50Ms: sse.slotToPush.p50(),
 				},
 				grpcFirstShare:
 					matched.length === 0

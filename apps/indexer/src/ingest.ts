@@ -48,6 +48,8 @@ export const createIngestor = (
 ) => {
 	const listeners = new Set<(event: LiveEvent) => void>()
 	let pushedThisTx = 0
+	/** Slot reference of the tx being applied; stamped on the events it emits. */
+	let slotAt: number | undefined
 	let internalListeners = 0
 	const health = { txs: 0, events: 0, lastEventAt: 0, startedAt: Date.now() }
 
@@ -111,7 +113,8 @@ export const createIngestor = (
 		'UPDATE pools SET graduated_at = $ts, progress = 1 WHERE pool = $pool AND graduated_at IS NULL',
 	)
 
-	const emit = (event: LiveEvent) => {
+	const emit = (body: LiveEvent) => {
+		const event = slotAt === undefined ? body : { ...body, slotAt }
 		for (const listener of listeners) listener(event)
 		pushedThisTx += listeners.size - internalListeners
 	}
@@ -224,7 +227,12 @@ export const createIngestor = (
 				health.events += events.length
 				health.lastEventAt = Date.now()
 				pushedThisTx = 0
-				applyTx(tx, events)
+				slotAt = telemetry.slotRef(tx.slot)
+				try {
+					applyTx(tx, events)
+				} finally {
+					slotAt = undefined
+				}
 				telemetry.pushed(tx.slot, pushedThisTx)
 			}
 			telemetry.processed(performance.now() - startedAt, events.length)

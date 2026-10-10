@@ -1,6 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from 'react'
 import { apiBase, type LiveEvent } from './api'
 
 export const usePolling = <T>(
@@ -155,7 +162,73 @@ export const useChangeTick = (value: unknown) => {
 export type FeedItem = LiveEvent & { id: number }
 export type LiveListener = (event: LiveEvent) => void
 
+/**
+ * Browser-side half of the latency picture, for events stamped with `slotAt` (the server's
+ * slot reference). Null until there are samples or the clock is synced.
+ */
+export type BrowserLatency = {
+	/** Slot reference → this tab's EventSource delivered the message, p50. */
+	receiveP50Ms: number | null
+	/** Slot reference → first frame painted after the feed committed it (4 Hz batches), p50. */
+	paintP50Ms: number | null
+	/** Round trip of the best clock-sync sample: the offset is good to about ±rttMs / 2. */
+	rttMs: number | null
+}
+
 const MAX_FEED = 60
+const LATENCY_WINDOW = 200
+const CLOCK_SYNC_MS = 5 * 60_000
+const CLOCK_SYNC_PINGS = 5
+
+const sampler = () => {
+	const values: number[] = []
+	return {
+		add(value: number) {
+			values.push(value)
+			if (values.length > LATENCY_WINDOW) values.shift()
+		},
+		p50() {
+			if (values.length === 0) return null
+			const sorted = [...values].sort((a, b) => a - b)
+			return sorted[Math.floor(sorted.length / 2)]
+		},
+	}
+}
+
+/**
+ * Offset between this browser's clock and the indexer's (server ms minus local ms), NTP
+ * style: a few pings to /api/time, keeping the one with the shortest round trip and assuming
+ * the reply was stamped halfway through it.
+ */
+const useServerClock = () => {
+	const clock = useRef<{ offset: number; rtt: number } | null>(null)
+	useEffect(() => {
+		let stopped = false
+		const sync = async () => {
+			let best: { offset: number; rtt: number } | null = null
+			for (let i = 0; i < CLOCK_SYNC_PINGS && !stopped; i++) {
+				try {
+					const sentAt = Date.now()
+					const t0 = performance.now()
+					const res = await fetch(`${apiBase}/time`, { cache: 'no-store' })
+					const { now } = (await res.json()) as { now: number }
+					const rtt = performance.now() - t0
+					if (!best || rtt < best.rtt) best = { offset: now - (sentAt + rtt / 2), rtt }
+				} catch {
+					// Indexer not reachable yet: keep the previous estimate.
+				}
+			}
+			if (best && !stopped) clock.current = best
+		}
+		sync()
+		const timer = setInterval(sync, CLOCK_SYNC_MS)
+		return () => {
+			stopped = true
+			clearInterval(timer)
+		}
+	}, [])
+	return clock
+}
 
 /**
  * One SSE connection to the indexer. `items` (newest first, max 60) is flushed to React at
@@ -170,10 +243,38 @@ export const useLiveStream = () => {
 	const timestamps = useRef<number[]>([])
 	const nextId = useRef(0)
 	const listeners = useRef(new Set<LiveListener>())
+	const clock = useServerClock()
+	const [latency, setLatency] = useState<BrowserLatency>({
+		receiveP50Ms: null,
+		paintP50Ms: null,
+		rttMs: null,
+	})
+	const receive = useRef(sampler())
+	const paint = useRef(sampler())
+	/** `slotAt` of the events in the batch being committed, for the paint measurement. */
+	const committing = useRef<number[]>([])
 
 	const push = useBatchedQueue<FeedItem>((batch) => {
+		for (const item of batch) if (item.slotAt !== undefined) committing.current.push(item.slotAt)
 		setItems((prev) => [...batch.reverse(), ...prev].slice(0, MAX_FEED))
 	})
+
+	// After the DOM update for a batch, wait for the next frame to be painted (rAF + task).
+	// Background tabs don't paint, so their samples would only measure throttling: skip them.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: runs once per committed batch
+	useLayoutEffect(() => {
+		const slots = committing.current
+		committing.current = []
+		if (slots.length === 0 || document.hidden) return
+		requestAnimationFrame(() =>
+			setTimeout(() => {
+				const synced = clock.current
+				if (!synced || document.hidden) return
+				const now = Date.now() + synced.offset
+				for (const slotAt of slots) paint.current.add(now - slotAt)
+			}),
+		)
+	}, [items])
 
 	const subscribe = useCallback((listener: LiveListener) => {
 		listeners.current.add(listener)
@@ -192,6 +293,9 @@ export const useLiveStream = () => {
 			setConnected(true)
 			if (event.type === 'hello') return
 			timestamps.current.push(Date.now())
+			const synced = clock.current
+			if (synced && event.slotAt !== undefined)
+				receive.current.add(Date.now() + synced.offset - event.slotAt)
 			for (const listener of listeners.current) listener(event)
 			push({ ...event, id: nextId.current++ })
 		}
@@ -199,12 +303,24 @@ export const useLiveStream = () => {
 			const cutoff = Date.now() - 60_000
 			timestamps.current = timestamps.current.filter((t) => t >= cutoff)
 			setEventsPerMinute(timestamps.current.length)
+			const next: BrowserLatency = {
+				receiveP50Ms: receive.current.p50(),
+				paintP50Ms: paint.current.p50(),
+				rttMs: clock.current?.rtt ?? null,
+			}
+			setLatency((prev) =>
+				prev.receiveP50Ms === next.receiveP50Ms &&
+				prev.paintP50Ms === next.paintP50Ms &&
+				prev.rttMs === next.rttMs
+					? prev
+					: next,
+			)
 		}, 2000)
 		return () => {
 			source.close()
 			clearInterval(rate)
 		}
-	}, [push])
+	}, [push, clock])
 
-	return { items, connected, eventsPerMinute, subscribe }
+	return { items, connected, eventsPerMinute, latency, subscribe }
 }

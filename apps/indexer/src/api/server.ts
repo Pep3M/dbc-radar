@@ -43,6 +43,8 @@ export const startServer = (opts: {
 					uptimeMs: Date.now() - ingestor.health.startedAt,
 				}),
 			'/api/stats': () => json(metrics.stats()),
+			/** Clock sync for browser-side latency: browsers estimate their offset from this. */
+			'/api/time': () => json({ now: Date.now() }),
 			'/api/pipeline': () => json(telemetry.snapshot(opts.sourceName, opts.blurConnected())),
 			'/api/alerts': () => json(opts.alerts.state()),
 			'/api/pools': (req) => {
