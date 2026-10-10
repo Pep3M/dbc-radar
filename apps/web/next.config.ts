@@ -15,6 +15,21 @@ const nextConfig: NextConfig = {
 	async headers() {
 		return [{ source: '/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex' }] }]
 	},
+	// Opening the bare host (e.g. http://localhost:3100/) would 404 outside basePath:
+	// send any path that lacks the prefix to its prefixed equivalent.
+	async redirects() {
+		if (!basePath) return []
+		const prefix = basePath.slice(1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+		return [
+			{ source: '/', destination: basePath, basePath: false, permanent: false },
+			{
+				source: `/:path((?!${prefix}(?:/|$)).+)`,
+				destination: `${basePath}/:path`,
+				basePath: false,
+				permanent: false,
+			},
+		]
+	},
 	async rewrites() {
 		return [{ source: '/api/:path*', destination: `${indexerUrl}/api/:path*` }]
 	},

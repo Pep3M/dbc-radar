@@ -145,7 +145,7 @@ export const PoolView = ({ pool }: { pool: string }) => {
 		return (
 			<NotFoundState
 				className={PAGE}
-				path={`/dbc-radar/pool/${shortAddress(pool)}`}
+				path={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/pool/${shortAddress(pool)}`}
 				solscanHref={links.solscanAccount(pool)}
 			/>
 		)
