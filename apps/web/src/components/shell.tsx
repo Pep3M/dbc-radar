@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { type ReactNode, Suspense, useState } from 'react'
+import { type ReactNode, useState } from 'react'
+import { useHydrated } from '@/lib/hooks'
 import { AlertBell } from './alerts/alert-bell'
 import { AlertToasts } from './alerts/alert-toasts'
 import { useStream } from './stream-provider'
@@ -56,8 +57,10 @@ const NavLinks = ({ path }: { path: string | null }) => (
 	</>
 )
 
-// usePathname suspends on routes with unknown dynamic params (cacheComponents), so the
-// active state streams in while the fallback renders the same links without it.
+// usePathname suspends on routes with unknown dynamic params (cacheComponents, e.g.
+// /pool/[pool]) and, even inside <Suspense>, Next 16.4 can leak an unhandled rejection
+// when the prerender aborts. Read it only after mount; until then the links render
+// without an active state.
 const ActiveNavLinks = () => <NavLinks path={usePathname()} />
 
 const MobileLinks = ({ path }: { path: string | null }) => (
@@ -107,39 +110,41 @@ export const HeaderStreamStatus = () => {
 	)
 }
 
-export const Header = ({ status }: { status?: ReactNode }) => (
-	<header className="sticky top-0 z-30 border-b border-line-soft bg-bg">
-		<div className="flex min-h-[52px] items-center gap-x-8 gap-y-2 px-4 whitespace-nowrap sm:min-h-[60px] sm:px-8">
-			<Link href="/" aria-label="DBC Radar home" className="shrink-0">
-				<Wordmark size={22} className="sm:hidden" />
-				<Wordmark size={28} className="hidden sm:flex" />
-			</Link>
-			<nav
-				aria-label="Main"
-				className="hidden gap-[26px] font-mono text-data-s tracking-[0.08em] uppercase sm:flex"
-			>
-				<Suspense fallback={<NavLinks path={null} />}>
-					<ActiveNavLinks />
-				</Suspense>
-			</nav>
-			<div className="ml-auto flex items-center gap-3 sm:gap-5">
-				{status}
-				<AlertBell />
+export const Header = ({ status }: { status?: ReactNode }) => {
+	const hydrated = useHydrated()
+	return (
+		<header className="sticky top-0 z-30 border-b border-line-soft bg-bg">
+			<div className="flex min-h-[52px] items-center gap-x-8 gap-y-2 px-4 whitespace-nowrap sm:min-h-[60px] sm:px-8">
+				<Link href="/" aria-label="DBC Radar home" className="shrink-0">
+					<Wordmark size={22} className="sm:hidden" />
+					<Wordmark size={28} className="hidden sm:flex" />
+				</Link>
+				<nav
+					aria-label="Main"
+					className="hidden gap-[26px] font-mono text-data-s tracking-[0.08em] uppercase sm:flex"
+				>
+					{hydrated ? <ActiveNavLinks /> : <NavLinks path={null} />}
+				</nav>
+				<div className="ml-auto flex items-center gap-3 sm:gap-5">
+					{status}
+					<AlertBell />
+				</div>
 			</div>
-		</div>
-	</header>
-)
+		</header>
+	)
+}
 
-export const MobileNav = () => (
-	<nav
-		aria-label="Main"
-		className="fixed inset-x-0 bottom-0 z-30 grid h-[60px] grid-cols-4 border-t border-line bg-bg pb-[env(safe-area-inset-bottom)] font-mono text-[10px] tracking-[0.06em] uppercase sm:hidden"
-	>
-		<Suspense fallback={<MobileLinks path={null} />}>
-			<ActiveMobileLinks />
-		</Suspense>
-	</nav>
-)
+export const MobileNav = () => {
+	const hydrated = useHydrated()
+	return (
+		<nav
+			aria-label="Main"
+			className="fixed inset-x-0 bottom-0 z-30 grid h-[60px] grid-cols-4 border-t border-line bg-bg pb-[env(safe-area-inset-bottom)] font-mono text-[10px] tracking-[0.06em] uppercase sm:hidden"
+		>
+			{hydrated ? <ActiveMobileLinks /> : <MobileLinks path={null} />}
+		</nav>
+	)
+}
 
 export const Footer = () => (
 	<footer className="mx-auto mt-auto w-full max-w-[1520px] border-t border-line-soft px-4 pt-[18px] pb-24 font-mono text-data-s leading-[1.6] text-ink-3 sm:px-8 sm:pb-10">

@@ -68,6 +68,16 @@ export const useReducedMotion = () =>
 		() => false,
 	)
 
+const subscribeNoop = () => () => {}
+
+/** `false` on the server render and the first hydration pass, `true` once mounted. */
+export const useHydrated = () =>
+	useSyncExternalStore(
+		subscribeNoop,
+		() => true,
+		() => false,
+	)
+
 /**
  * Queue that collects items at any rate and hands them to `onFlush` in one batch every
  * `intervalMs` (4 Hz by default). Use it to turn a firehose (SSE, canvas hits) into a
